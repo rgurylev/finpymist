@@ -7,10 +7,15 @@ from tinkoff.invest import AsyncClient
 import os
 import logging
 
+MAX_DAYS = 1000
+MIN_RATE = 0.2
+TAX = 0.13
+RISK = [RiskLevel.RISK_LEVEL_LOW, RiskLevel.RISK_LEVEL_MODERATE]
+
 logger = logging.getLogger(__name__)
 
 TOKEN = os.environ["TINKOFF_TOKEN"]
-risk = [RiskLevel.RISK_LEVEL_LOW]
+
 
 class Bond(NamedTuple):
     name: str
@@ -19,6 +24,7 @@ class Bond(NamedTuple):
     currency: str
     sector: str
     rate: float
+    risk: int
 
 def m2f(money):
     return round (money.units + money.nano / 10 ** 9, 2)
@@ -26,14 +32,14 @@ def m2f(money):
 def get_days (bond):
     return (bond.maturity_date.replace(tzinfo=None) - TODAY).days
 
-async def get_bond_xirr (bond = None, date =  MAX_DATE):
+async def get_bond_ext (bond = None, date =  MAX_DATE):
     async with AsyncClient(TOKEN) as client:
         result = None
         rate = None
         coupon_sum = 0
         #days = (bond.maturity_date.replace(tzinfo=None) - TODAY).days
         days = get_days(bond)
-        if days > 360: return None
+        #if days > DAYS: return None
         try:
             price, coupons = await asyncio.gather(
                 client.market_data.get_last_prices(figi=[bond.figi]),
@@ -56,7 +62,7 @@ async def get_bond_xirr (bond = None, date =  MAX_DATE):
             values.append (bond.nominal.units)
             operdates.append (bond.maturity_date.replace(tzinfo=None))
             # добавляем налог на купон со знаком "-"
-            values.append( round (coupon_sum * -0.13,2))
+            values.append( round (coupon_sum * -TAX,2))
             operdates.append (bond.maturity_date.replace(tzinfo=None))
             # вычисляем чистую ставку
             rate = xirr(values, operdates, 365)
@@ -67,13 +73,14 @@ async def get_bond_xirr (bond = None, date =  MAX_DATE):
                              'days': days,
                              'currency': bond.currency,
                              'sector': bond.sector,
-                              'rate': rate
+                              'rate': rate,
+                              'risk': bond.risk_level
                             })
         except:
            print (f'Ошибка расчета доходности по облигации {bond.ticker}')
         return result
 
-async def bonds():
+async def bonds(max_days = 99999, min_rate = -1.0):
     list = []
     try:
         async with AsyncClient(TOKEN) as client:
@@ -83,9 +90,9 @@ async def bonds():
                 i+=1
                 #days = (bond.maturity_date.replace(tzinfo=None) - TODAY).days
                 days = get_days(bond)
-                if bond.risk_level in risk and days < 360 and bond.currency == 'rub':
-                    res = await get_bond_xirr (bond = bond)
-                    if res.rate > 0.2: list.append(res)
+                if bond.risk_level in RISK and days <= max_days and bond.currency == 'rub':
+                    res = await get_bond_ext (bond = bond)
+                    if res.rate >= min_rate: list.append(res)
                     # if i%30 == 0: await asyncio.sleep(1 / 1000)
         return list
     except Exception as e:
@@ -106,7 +113,7 @@ async def bonds1():
 
         for page_number, page in enumerate(paginate(list_bonds, 100), start=1):
             print(f"Page {page_number}")
-            res = await asyncio.gather(*(get_bond_xirr(x) for x in page))
+            res = await asyncio.gather(*(get_bond_ext(x) for x in page))
             print(res)
             await asyncio.sleep(1/100)
 

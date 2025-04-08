@@ -27,10 +27,10 @@ LOGGING_CONFIG = {
     'loggers': {
         '': {  # root logger
             'handlers': ['default'],
-            'level': 'INFO',
+            'level': 'ERROR',
             'propagate': False
         },
-        'finpymist.bonds': {
+        'finpymist': {
             'handlers': ['default', 'log_file_handler'],
             'level': 'INFO',
             'propagate': False

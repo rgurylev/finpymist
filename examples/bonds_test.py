@@ -7,7 +7,7 @@ from finpymist.bonds import bonds
 logger = logging.getLogger(__name__)
 
 async def main():
-    b = await bonds()
+    b = await bonds(max_days=1050, min_rate=0.2)
     #s = ''
     #for x in sorted (b, key=lambda x: -x.rate):
     #    s += f"{x.name} \n" f"дней: {x.days} ставка:{x.rate*100:6.2f}\n\n"
