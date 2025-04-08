@@ -1,7 +1,10 @@
-from bonds import bonds
 import asyncio
 import pandas as pd
+import logging
 import set_logger
+from finpymist.bonds import bonds
+
+logger = logging.getLogger(__name__)
 
 async def main():
     b = await bonds()

@@ -1,12 +1,11 @@
 from typing import NamedTuple
 import asyncio
-from utils.datetime import *
+from finpymist.utils.datetime import *
+from finpymist.utils.finance import xirr
 from tinkoff.invest.schemas import RiskLevel
 from tinkoff.invest import AsyncClient
-from utils.finance import xirr
 import os
 import logging
-
 
 logger = logging.getLogger(__name__)
 
