@@ -2,3 +2,8 @@ numpy
 pandas
 openpyxl
 tinkoff-investments
+playwright
+bs4
+dotenv
+aiohttp
+async_lru

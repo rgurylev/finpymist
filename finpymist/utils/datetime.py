@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone, date
 
 MIN_DATE = datetime.strptime ('1900-01-01', '%Y-%m-%d')
 MAX_DATE = datetime.strptime ('4444-01-01', '%Y-%m-%d')
-TODAY = datetime.strptime (date.today().strftime("%Y-%m-%d"), '%Y-%m-%d')
+#TODAY = datetime.strptime (date.today().strftime("%Y-%m-%d"), '%Y-%m-%d').date()
+TODAY = date.today()
 
 
 def to_date(date):

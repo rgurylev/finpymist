@@ -1,3 +1,5 @@
+from settings import LOG_DIR
+
 import logging.config
 
 LOGGING_CONFIG = {
@@ -12,15 +14,15 @@ LOGGING_CONFIG = {
     },
     'handlers': {
         'default': {
-            'level': 'INFO',
+            'level': 'DEBUG',
             'formatter': 'standard',
             'class': 'logging.StreamHandler',
             'stream': 'ext://sys.stdout',  # Default is stderr
         },
         'log_file_handler': {
             'class': 'logging.FileHandler',
-            'filename': 'examples.log',
-            'formatter': 'standard',
+            'filename': LOG_DIR / 'examples.log',
+            'formatter':  'standard',
             'mode': 'a',
         },
     },
@@ -32,7 +34,7 @@ LOGGING_CONFIG = {
         },
         'finpymist': {
             'handlers': ['default', 'log_file_handler'],
-            'level': 'INFO',
+            'level': 'DEBUG',
             'propagate': False
         },
         '__main__': {  # if __name__ == '__main__'
