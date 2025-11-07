@@ -198,7 +198,7 @@ async def get_coupons(bond):
                         logger.error(f'Ошибка получения графика выплаты купонов по облигации {bond.ticker}: {e} ')
                         return None
 
-
+'''
 async def get_rank(isin):
         url = 'https://smart-lab.ru/q/bonds/' + isin
         logger.debug(f'get_rank: {url}')
@@ -221,7 +221,7 @@ async def get_rank(isin):
            logger.error (f'Ошибка определения кредитного рейтинга облигации {isin}: {e}')
            return (isin, None)
 
-#
+'''
 
 def m2f(money):
     return round (money.units + money.nano / 10 ** 9, 2)
@@ -365,6 +365,7 @@ async def bonds3(max_days = 99999, min_rate = -1.0, limit = None):
 
         # добавляем кредитный рейтинг
         ranks = await get_ranks([x.ticker for x in bonds])
+        ranks = [(k, v) for k, v in ranks.items() if k in [x.ticker for x in bonds]]
         for  b, r in zip (sorted (bonds, key = lambda x: x.ticker) , sorted (ranks, key = lambda x: x[0])):
            b.rank = r[1]
 
