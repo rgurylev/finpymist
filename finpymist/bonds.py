@@ -1,17 +1,20 @@
 import os
 import logging
 import asyncio
+import pandas as pd
 from tinkoff.invest import AsyncClient, Client
 from tinkoff.invest.schemas import MoneyValue
 from tinkoff.invest.schemas import RiskLevel
 from tinkoff.invest.schemas import InstrumentIdType
 from finpymist.utils.datetime import *
-from finpymist.utils.finance import xirr
+from finpymist.utils.finance import xirr, depr
 from finpymist.currency import get_rate_async
 from finpymist.smartlab import get_ranks
 from finpymist.utils.concurency import execute_method, execute_func
 from finpymist.moex import get_oferta
 from tinkoff_.async_smart_client import AsyncSmartClient
+import set_logger
+
 
 MAX_DAYS = 1000
 MIN_RATE = 0.2
@@ -39,6 +42,8 @@ class Bond:
         self.risk = risk
         self.days = (self.maturity_date - TODAY).days
         self.rate = None
+        self.dep_rate = None
+        self.dep_rate_details = None
         self.price = None
         self.coupons = None
         self.currate = None
@@ -115,14 +120,23 @@ class Bond:
             operdates.append(self.coupons_last_date if self.coupons_last_date else end_date)
             # добавляем налог на купон со знаком "-"
             values.append(round(coupon_sum * -TAX, 2))
-            operdates.append(end_date)
+            operdates.append(self.coupons_last_date)
             # вычисляем чистую ставку
             self.rate = xirr(values, operdates, 365)
             #await asyncio.sleep(1 )
             self.cash_flow = (operdates, values)
+            self.dep_rate, self.dep_rate_details = depr (values, operdates)
+
+
+
+def details_to_excel (bond, file_name):
+    cash_flow = pd.DataFrame(list(zip(bond.cash_flow[0], bond.cash_flow[1])), columns=['дата', 'значение'])
+    details = pd.DataFrame(bond.dep_rate_details)
+    with pd.ExcelWriter(file_name) as writer:
+        cash_flow.to_excel(writer, sheet_name='cash_flow', index=False)
+        details.to_excel(writer, sheet_name='details', index=False)
 
 # функции  получения атрибутов облигации
-
 async def get_price(bond):
         async with AsyncClient(TOKEN) as client:
             try:
@@ -140,7 +154,8 @@ async def get_coupons(bond):
 
                         coupons = await client.instruments.get_bond_coupons(figi=bond.figi, from_=datetime.today(),
                                                                                  to=datetime(2050, 12, 31))
-                        return coupons.events
+                        coupons = sorted(coupons.events, key=lambda x: x.coupon_number)
+                        return coupons
                         # self.coupons = coupons
                     except Exception as e:
                         logger.error(f'Ошибка получения графика выплаты купонов по облигации {bond.ticker}: {e} ')
@@ -193,6 +208,24 @@ async def bonds(max_days = 99999, min_rate = -1.0, limit = None):
         return bonds
     finally:
         await client.disconnect()
+
+async def bond_ext(ticker):
+    client = AsyncSmartClient(TOKEN)
+    try:
+        await client.connect()
+        bond = Bond.create_by_ticker(ticker)
+        prices, coupons, bond.currate = await asyncio.gather(
+            client.get_last_prices([bond.figi]),
+            client.get_bond_coupons(bond.figi),
+            get_rate_async(bond.nominal.currency)
+        )
+        bond.coupons = sorted(coupons, key=lambda x: x.coupon_number)
+        bond.price = (prices[0].price.units + prices[0].price.nano / 10 ** 9) * bond.nominal.units / 100
+        await bond.calc_rate()
+    finally:
+        await client.disconnect()
+    return bond
+
 
 async def bonds2(max_days = 99999, min_rate = -1.0):
     list = []

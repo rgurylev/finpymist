@@ -57,13 +57,17 @@ def xirr (values, dates, base_interval = 365 ):
 def depr (values, dates):
     base = 0
     w = 0
+    details = []
     for i, v in enumerate(values):
-        base+=v
+        base+=-1*v
+        if abs(base) <= 0: break
         days = 0 if i == len(dates)-1 else (dates[i+1] - dates[i]).days
+        if days > 0:
+            details.append({'date1': dates[i], 'date2': dates[i+1], 'base': base, 'days': days})
         w+=base*days
         print (f'date {dates[i]} base: {base}   days    {days}')
     rate = -1*(base / w)*365
-    return rate
+    return rate, details
 
 def rsi(df, periods=14, ema=True):
     """
