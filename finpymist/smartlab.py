@@ -12,20 +12,22 @@ RANKS_FILE : Final[str] = DATA_DIR / 'ranks.json'
 
 async def get_ranks(ids):
 
-    try:
-        with open(RANKS_FILE, 'r') as file:
-            ranks = json.load(file)
-    except Exception as e:
-        logger.info(f'ошибка открытия файла ranks.json')
-        ranks ={}
-
+    #try:
+    #    with open(RANKS_FILE, 'r') as file:
+    #        ranks = json.load(file)
+    #except Exception as e:
+    #    logger.info(f'ошибка открытия файла ranks.json')
+    #    ranks ={}
+    ranks = {}
     loader = HtmlLoader()
-    urls = [ (id, f'https://smart-lab.ru/q/bonds/{id}') for id in ids if ranks.get(id) == None]
+    #urls = [ (id, f'https://smart-lab.ru/q/bonds/{id}') for id in ids if ranks.get(id) == None]
+    urls = [(id, f'https://smart-lab.ru/q/bonds/{id}') for id in ids]
     logger.warning ('начали загрузку рейтингов с smart-lab.ru...')
     async for id, url, html in loader.load2(urls):
         ranks[id] = get_rank(html)
-    with open(RANKS_FILE, "w", encoding="utf-8") as file:
-        json.dump(ranks, file)
+    #with open(RANKS_FILE, "w", encoding="utf-8") as file:
+    #    json.dump(ranks, file)
+
     return ranks
 
 def get_rank(html):

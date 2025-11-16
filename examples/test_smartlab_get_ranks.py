@@ -18,26 +18,6 @@ async def main():
     ranks = await get_ranks(ids)
     ranks = [(k, v) for k, v in ranks.items() ]
     print (ranks)
-    #page = await get_html2('https://smart-lab.ru/q/bonds/RU000A105PH6')
-    #loader = HtmlLoader()
-    #async for i, _, html in loader.load2(urls, 10):
-    #    print (f'{i} {html[:20]}')
-
-    #print (page)
-
-
-#pages = await loader.load(urls)
-    #sleep(10)
-    #i=1
-    #for x in pages:
-        #print (x[:1000])
-        #with open(f"{i}.html", "w") as file:
-        #    file.write(x)
-        #i+=1
-        #get_rate2(x)
-        #rank = get_rank2(x)
-        #print(rank)
-
 
 
 if __name__ == "__main__":

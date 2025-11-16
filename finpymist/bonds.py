@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import pandas as pd
+import json
 from tinkoff.invest import AsyncClient, Client
 from tinkoff.invest.schemas import MoneyValue
 from tinkoff.invest.schemas import RiskLevel
@@ -14,7 +15,8 @@ from finpymist.utils.concurency import execute_method, execute_func
 from finpymist.moex import get_oferta
 from tinkoff_.async_smart_client import AsyncSmartClient
 import set_logger
-
+from typing import Final
+from settings import DATA_DIR
 
 MAX_DAYS = 1000
 MIN_RATE = 0.2
@@ -26,6 +28,11 @@ TODAY = date.today()
 #import set_logger
 logger = logging.getLogger(__name__)
 TOKEN = os.environ["TINKOFF_TOKEN"]
+RANKS_FILE : Final[str] = DATA_DIR / 'ranks.json'
+
+
+def m2f(money):
+    return round(money.units + money.nano / 10 ** 9, 2)
 
 class Bond:
     def __init__(self, name: str, ticker: str, figi: str, currency: str,
@@ -128,132 +135,157 @@ class Bond:
             self.dep_rate, self.dep_rate_details = depr (values, operdates)
 
 
+class BondsService:
+    def __init__(self):
+        self.ranks = {}
 
-def details_to_excel (bond, file_name):
-    cash_flow = pd.DataFrame(list(zip(bond.cash_flow[0], bond.cash_flow[1])), columns=['дата', 'значение'])
-    details = pd.DataFrame(bond.dep_rate_details)
-    with pd.ExcelWriter(file_name) as writer:
-        cash_flow.to_excel(writer, sheet_name='cash_flow', index=False)
-        details.to_excel(writer, sheet_name='details', index=False)
+    def __enter__(self):
+        return self
 
-# функции  получения атрибутов облигации
-async def get_price(bond):
-        async with AsyncClient(TOKEN) as client:
-            try:
-                price = await client.market_data.get_last_prices(figi=[bond.figi])
-                price = price.last_prices[0].price
-                price = (price.units + price.nano / 10 ** 9) * bond.nominal.units / 100
-                return price
-            except Exception as e:
-                logger.error(f'Ошибка определения цены облигации {bond.ticker}: {e} ')
-                return None
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.ranks:
+            with open(RANKS_FILE, "w", encoding="utf-8") as file:
+                json.dump(self.ranks, file)
+        return True
 
-async def get_coupons(bond):
-                async with AsyncClient(TOKEN) as client:
-                    try:
+    def details_to_excel (self, bond, file_name):
+        cash_flow = pd.DataFrame(list(zip(bond.cash_flow[0], bond.cash_flow[1])), columns=['дата', 'значение'])
+        details = pd.DataFrame(bond.dep_rate_details)
+        with pd.ExcelWriter(file_name) as writer:
+            cash_flow.to_excel(writer, sheet_name='cash_flow', index=False)
+            details.to_excel(writer, sheet_name='details', index=False)
 
-                        coupons = await client.instruments.get_bond_coupons(figi=bond.figi, from_=datetime.today(),
-                                                                                 to=datetime(2050, 12, 31))
-                        coupons = sorted(coupons.events, key=lambda x: x.coupon_number)
-                        return coupons
-                        # self.coupons = coupons
-                    except Exception as e:
-                        logger.error(f'Ошибка получения графика выплаты купонов по облигации {bond.ticker}: {e} ')
-                        return None
+    async def get_ranks(self, ids):
+        try:
+            with open(RANKS_FILE, 'r') as file:
+                self.ranks = json.load(file)
+        except Exception as e:
+            logger.info(f'ошибка открытия файла ranks.json')
+        ranks = await get_ranks( [id for id in ids if self.ranks.get(id) == None] )
+        for k, v in ranks.items():
+            self.ranks[k] = v
+        ranks = {id: self.ranks[id] for id in ids}
+        return ranks
 
-def m2f(money):
-    return round (money.units + money.nano / 10 ** 9, 2)
+    # функции  получения атрибутов облигации
+    async def get_price(self, bond):
+            async with AsyncClient(TOKEN) as client:
+                try:
+                    price = await client.market_data.get_last_prices(figi=[bond.figi])
+                    price = price.last_prices[0].price
+                    price = (price.units + price.nano / 10 ** 9) * bond.nominal.units / 100
+                    return price
+                except Exception as e:
+                    logger.error(f'Ошибка определения цены облигации {bond.ticker}: {e} ')
+                    return None
 
-async def bonds(max_days = 99999, min_rate = -1.0, limit = None):
-    bonds = []
-#    columns = ['name', 'ticker', 'figi', 'currency', 'days', 'price', 'rate', 'sector', 'risk', 'rank']
-    i = 0
-    #try:
-    client = AsyncSmartClient(TOKEN)
-    try:
-        await client.connect()
-        bonds_response = await client.bonds()
-        for b in bonds_response:
-                #if b.figi not in ['RU000A101Z74']: continue
-                i+=1
-                #if not (b.isin=='RU000A10B1N3'): continue
-                if limit and i > limit: break
-                if 'ОФЗ' in b.name.upper(): continue
-                bond = Bond.create(b)
-                prices, coupons, bond.currate = await asyncio.gather(
-                    client.get_last_prices([bond.figi]),
-                    client.get_bond_coupons(bond.figi),
-                   # get_oferta(bond.ticker),
-                    get_rate_async(bond.nominal.currency)
-                )
-                #bond.coupons = [x for x in coupons if x.coupon_date.date() > TODAY]
-                bond.coupons = sorted(coupons, key=lambda x: x.coupon_number)
-                bond.price = (prices[0].price.units + prices[0].price.nano / 10 ** 9) * bond.nominal.units / 100
-                #if bond.coupons[len(bond.coupons) - 1].pay_one_bond.units == 0:
-                #    logger.debug(f'Последний купон {bond.ticker} = 0. Ищем дату оферты')
-                #    bond.oferta_date, bond.call_date, bond.put_date = await get_oferta(bond.ticker)
+    async def get_coupons(self, bond):
+                    async with AsyncClient(TOKEN) as client:
+                        try:
 
-                if bond.risk in RISK and bond.days<=max_days and bond.currency=='rub' and bond.nominal.currency=='rub':
-                    await bond.calc_rate()
-                    if bond.rate == None or bond.rate >= min_rate:
-                        bonds.append(bond)
-                        logger.info (bond)
+                            coupons = await client.instruments.get_bond_coupons(figi=bond.figi, from_=datetime.today(),
+                                                                                     to=datetime(2050, 12, 31))
+                            coupons = sorted(coupons.events, key=lambda x: x.coupon_number)
+                            return coupons
+                            # self.coupons = coupons
+                        except Exception as e:
+                            logger.error(f'Ошибка получения графика выплаты купонов по облигации {bond.ticker}: {e} ')
+                            return None
 
-        # добавляем кредитный рейтинг
-        ranks = await get_ranks([x.ticker for x in bonds])
-        ranks = [(k, v) for k, v in ranks.items() if k in [x.ticker for x in bonds]]
-        for  b, r in zip (sorted (bonds, key = lambda x: x.ticker) , sorted (ranks, key = lambda x: x[0])):
-           b.rank = r[1]
+    async def bonds(self, max_days = 99999, min_rate = -1.0, limit = None):
+        bonds = []
+    #    columns = ['name', 'ticker', 'figi', 'currency', 'days', 'price', 'rate', 'sector', 'risk', 'rank']
+        i = 0
+        #try:
+        client = AsyncSmartClient(TOKEN)
+        try:
+            await client.connect()
+            bonds_response = await client.bonds()
+            for b in bonds_response:
+                    #if b.figi not in ['RU000A101Z74']: continue
+                    i+=1
+                    #if not (b.isin=='RU000A10B1N3'): continue
+                    if limit and i > limit: break
+                    if 'ОФЗ' in b.name.upper(): continue
+                    bond = Bond.create(b)
+                    prices, coupons, bond.currate = await asyncio.gather(
+                        client.get_last_prices([bond.figi]),
+                        client.get_bond_coupons(bond.figi),
+                       # get_oferta(bond.ticker),
+                        get_rate_async(bond.nominal.currency)
+                    )
+                    #bond.coupons = [x for x in coupons if x.coupon_date.date() > TODAY]
+                    bond.coupons = sorted(coupons, key=lambda x: x.coupon_number)
+                    bond.price = (prices[0].price.units + prices[0].price.nano / 10 ** 9) * bond.nominal.units / 100
+                    #if bond.coupons[len(bond.coupons) - 1].pay_one_bond.units == 0:
+                    #    logger.debug(f'Последний купон {bond.ticker} = 0. Ищем дату оферты')
+                    #    bond.oferta_date, bond.call_date, bond.put_date = await get_oferta(bond.ticker)
 
-        return bonds
-    finally:
-        await client.disconnect()
+                    if bond.risk in RISK and bond.days<=max_days and bond.currency=='rub' and bond.nominal.currency=='rub':
+                        await bond.calc_rate()
+                        if bond.rate == None or bond.rate >= min_rate:
+                            bonds.append(bond)
+                            logger.info (bond)
 
-async def bond_ext(ticker):
-    client = AsyncSmartClient(TOKEN)
-    try:
-        await client.connect()
-        bond = Bond.create_by_ticker(ticker)
-        prices, coupons, bond.currate = await asyncio.gather(
-            client.get_last_prices([bond.figi]),
-            client.get_bond_coupons(bond.figi),
-            get_rate_async(bond.nominal.currency)
-        )
-        bond.coupons = sorted(coupons, key=lambda x: x.coupon_number)
-        bond.price = (prices[0].price.units + prices[0].price.nano / 10 ** 9) * bond.nominal.units / 100
-        await bond.calc_rate()
-    finally:
-        await client.disconnect()
-    return bond
+            # добавляем кредитный рейтинг
+            ranks = await get_ranks([x.ticker for x in bonds])
+            ranks = [(k, v) for k, v in ranks.items() if k in [x.ticker for x in bonds]]
+            for  b, r in zip (sorted (bonds, key = lambda x: x.ticker) , sorted (ranks, key = lambda x: x[0])):
+               b.rank = r[1]
+
+            return bonds
+        finally:
+            await client.disconnect()
+
+    async def bond_ext(self, ticker = None):
+        client = AsyncSmartClient(TOKEN)
+        bond = None
+        try:
+            await client.connect()
+            if bond == None:
+                bond = Bond.create_by_ticker(ticker)
+            prices, coupons, bond.currate = await asyncio.gather(
+                client.get_last_prices([bond.figi]),
+                client.get_bond_coupons(bond.figi),
+                get_rate_async(bond.nominal.currency)
+            )
+            bond.coupons = sorted(coupons, key=lambda x: x.coupon_number)
+            bond.price = (prices[0].price.units + prices[0].price.nano / 10 ** 9) * bond.nominal.units / 100
+            await bond.calc_rate()
+            ranks = await self.get_ranks([bond.ticker])
+            bond.rank = ranks[bond.ticker]
+        finally:
+            await client.disconnect()
+        return bond
 
 
-async def bonds2(max_days = 99999, min_rate = -1.0):
-    list = []
-    columns = ['name', 'ticker', 'figi', 'currency', 'days', 'price', 'rate', 'sector', 'risk', 'rank']
-    try:
-       async with AsyncClient(TOKEN) as client:
-            bonds = await client.instruments.bonds()
-       i = 0
-       k = 0
-       n = len(bonds.instruments)
-       for b in bonds.instruments:
-                bond = Bond.create(b)
-                #days = (bond.maturity_date.replace(tzinfo=None) - TODAY).days
-                k += 1
-                if bond.risk in RISK and bond.days<=max_days and bond.currency=='rub' and bond.nominal.currency=='usd':
-                    await bond.calc_rate ()
-                    logger.info (b)
-                    if bond.rate == None or bond.rate>= min_rate:
-                        await bond.get_rank()
-                        list.append(bond.dict(columns))
-                        i += 1
-                        #if i > 10: break
-                    # if i%30 == 0: await asyncio.sleep(1 / 1000)
-                #print(i)
-       return list
-    except Exception as e:
-        logger.error(f"Failed {repr(e)}")
-        return None
+    async def bonds2(self, max_days = 99999, min_rate = -1.0):
+        list = []
+        columns = ['name', 'ticker', 'figi', 'currency', 'days', 'price', 'rate', 'sector', 'risk', 'rank']
+        try:
+           async with AsyncClient(TOKEN) as client:
+                bonds = await client.instruments.bonds()
+           i = 0
+           k = 0
+           n = len(bonds.instruments)
+           for b in bonds.instruments:
+                    bond = Bond.create(b)
+                    #days = (bond.maturity_date.replace(tzinfo=None) - TODAY).days
+                    k += 1
+                    if bond.risk in RISK and bond.days<=max_days and bond.currency=='rub' and bond.nominal.currency=='usd':
+                        await bond.calc_rate ()
+                        logger.info (b)
+                        if bond.rate == None or bond.rate>= min_rate:
+                            await bond.get_rank()
+                            list.append(bond.dict(columns))
+                            i += 1
+                            #if i > 10: break
+                        # if i%30 == 0: await asyncio.sleep(1 / 1000)
+                    #print(i)
+           return list
+        except Exception as e:
+            logger.error(f"Failed {repr(e)}")
+            return None
 
 #if __name__ == "__main__":
 #    asyncio.run(bonds())
